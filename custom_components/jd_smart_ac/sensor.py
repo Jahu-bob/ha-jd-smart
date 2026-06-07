@@ -94,7 +94,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up JD Smart sensors."""
     async_add_entities(
-        JdSmartSensor(entry.runtime_data.coordinator, description)
+        JdSmartSensor(coordinator, description)
+        for coordinator in entry.runtime_data.coordinators.values()
         for description in SENSORS
     )
 

@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import selector
 
 from .api import (
     JdSmartAuthError,
@@ -25,6 +26,7 @@ from .const import (
     CONF_CHANNEL,
     CONF_COOKIE,
     CONF_DEVICE_NAME,
+    CONF_DEVICES,
     CONF_DEVICE_ID,
     CONF_DEVICE_MODEL,
     CONF_FEED_ID,
@@ -45,7 +47,7 @@ from .const import (
     LOGGER,
 )
 
-CONF_SELECTED_DEVICE = "selected_device"
+CONF_SELECTED_DEVICES = "selected_devices"
 
 
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
@@ -180,7 +182,14 @@ class JdSmartAcConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 self._auth_data = data
-                self._devices = devices
+                configured_feed_ids = _configured_feed_ids(self._async_current_entries())
+                self._devices = [
+                    device
+                    for device in devices
+                    if device.feed_id not in configured_feed_ids
+                ]
+                if not self._devices:
+                    return self.async_abort(reason="no_devices")
                 return await self.async_step_select_device()
 
         return self.async_show_form(
@@ -196,27 +205,51 @@ class JdSmartAcConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         devices = getattr(self, "_devices", [])
         if user_input is not None:
-            feed_id = user_input[CONF_SELECTED_DEVICE]
-            device = next(
-                (item for item in devices if item.feed_id == feed_id),
-                None,
-            )
-            if device is None:
+            selected = user_input[CONF_SELECTED_DEVICES]
+            selected_feed_ids = {selected} if isinstance(selected, str) else set(selected)
+            selected_devices = [
+                device for device in devices if device.feed_id in selected_feed_ids
+            ]
+            if not selected_devices or len(selected_devices) != len(selected_feed_ids):
                 errors["base"] = "unknown"
             else:
+                first_device = selected_devices[0]
                 data = {
                     **self._auth_data,
-                    CONF_FEED_ID: device.feed_id,
-                    CONF_DEVICE_NAME: device.name,
+                    CONF_FEED_ID: first_device.feed_id,
+                    CONF_DEVICE_NAME: first_device.name,
+                    CONF_DEVICES: [
+                        {
+                            CONF_FEED_ID: device.feed_id,
+                            CONF_DEVICE_NAME: device.name,
+                        }
+                        for device in selected_devices
+                    ],
                 }
-                await self.async_set_unique_id(device.feed_id)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=device.name, data=data)
+                title = (
+                    first_device.name
+                    if len(selected_devices) == 1
+                    else f"JD Smart ({len(selected_devices)} devices)"
+                )
+                return self.async_create_entry(title=title, data=data)
 
-        choices = {device.feed_id: _device_label(device) for device in devices}
+        options = [
+            selector.SelectOptionDict(value=device.feed_id, label=_device_label(device))
+            for device in devices
+        ]
         return self.async_show_form(
             step_id="select_device",
-            data_schema=vol.Schema({vol.Required(CONF_SELECTED_DEVICE): vol.In(choices)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SELECTED_DEVICES): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
             errors=errors,
         )
 
@@ -256,3 +289,14 @@ def _device_label(device: JdSmartDevice) -> str:
     details = [value for value in (device.room_name, device.category_name) if value]
     suffix = f" - {' / '.join(details)}" if details else ""
     return f"{device.name}{suffix} ({device.feed_id})"
+
+
+def _configured_feed_ids(entries) -> set[str]:
+    """Return feed IDs already configured in existing entries."""
+    feed_ids: set[str] = set()
+    for entry in entries:
+        if devices := entry.data.get(CONF_DEVICES):
+            feed_ids.update(device[CONF_FEED_ID] for device in devices)
+        elif feed_id := entry.data.get(CONF_FEED_ID):
+            feed_ids.add(feed_id)
+    return feed_ids

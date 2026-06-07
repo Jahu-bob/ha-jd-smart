@@ -65,15 +65,7 @@ config/custom_components/jd_smart_ac/
 https://api.smart.jd.com/c/service/integration/v1/getDeviceSnapshot_v1
 ```
 
-尽量从同一次请求中复制所有字段。
-
-`feed_id`
-
-空调设备的 feed ID，位于请求 body：
-
-```json
-{"json":{"feed_id":"YOUR_FEED_ID","digest":"","pullMode":0,"version":"2.0"}}
-```
+尽量从同一次请求中复制所有字段。不需要手动填写 `feed_id`。认证通过后，集成会自动拉取设备列表，并允许一次选择一个或多个空调设备；已经配置过的设备不会再出现在选择列表中。
 
 `cookie`
 

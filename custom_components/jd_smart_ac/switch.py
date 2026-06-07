@@ -41,7 +41,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up JD Smart switches."""
     async_add_entities(
-        JdSmartSwitch(entry.runtime_data.coordinator, description)
+        JdSmartSwitch(coordinator, description)
+        for coordinator in entry.runtime_data.coordinators.values()
         for description in SWITCHES
     )
 

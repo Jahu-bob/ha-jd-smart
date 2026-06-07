@@ -65,15 +65,10 @@ Open the air conditioner page and capture a successful request to:
 https://api.smart.jd.com/c/service/integration/v1/getDeviceSnapshot_v1
 ```
 
-Use values from the same request whenever possible.
-
-`feed_id`
-
-The air conditioner feed ID. It appears in the request body:
-
-```json
-{"json":{"feed_id":"YOUR_FEED_ID","digest":"","pullMode":0,"version":"2.0"}}
-```
+Use values from the same request whenever possible. You do not need to enter
+`feed_id` manually. After authentication, the integration fetches the available
+devices and lets you select one or more air conditioners. Devices that are
+already configured are hidden from the selection list.
 
 `cookie`
 

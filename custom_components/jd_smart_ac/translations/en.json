@@ -1,7 +1,8 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Device is already configured"
+            "already_configured": "Device is already configured",
+            "no_devices": "No new air conditioners were found. Already configured devices are hidden."
         },
         "error": {
             "cannot_connect": "Failed to connect",
@@ -56,9 +57,9 @@
             },
             "select_device": {
                 "data": {
-                    "selected_device": "Device"
+                    "selected_devices": "Devices"
                 },
-                "description": "Select the air conditioner to add."
+                "description": "Select one or more air conditioners to add. Already configured devices are hidden."
             }
         }
     },

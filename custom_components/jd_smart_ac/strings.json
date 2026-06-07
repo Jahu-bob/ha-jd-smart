@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "no_devices": "No new air conditioners were found. Already configured devices are hidden."
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -40,9 +41,9 @@
       },
       "select_device": {
         "data": {
-          "selected_device": "Device"
+          "selected_devices": "Devices"
         },
-        "description": "Select the air conditioner to add."
+        "description": "Select one or more air conditioners to add. Already configured devices are hidden."
       },
       "reauth_confirm": {
         "data": {

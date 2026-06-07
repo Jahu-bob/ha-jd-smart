@@ -63,7 +63,10 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up JD Smart climate."""
-    async_add_entities([JdSmartClimate(entry.runtime_data.coordinator)])
+    async_add_entities(
+        JdSmartClimate(coordinator)
+        for coordinator in entry.runtime_data.coordinators.values()
+    )
 
 
 class JdSmartClimate(JdSmartEntity, ClimateEntity):

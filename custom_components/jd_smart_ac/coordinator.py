@@ -42,9 +42,7 @@ class JdSmartRuntimeData:
     """Runtime data for JD Smart."""
 
     client: JdSmartClient
-    coordinator: JdSmartCoordinator
-    feed_id: str
-    device_name: str | None = None
+    coordinators: dict[str, JdSmartCoordinator]
 
 
 class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
@@ -58,6 +56,7 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         entry: JdSmartConfigEntry,
         client: JdSmartClient,
         feed_id: str,
+        device_name: str | None,
     ) -> None:
         """Initialize coordinator."""
         super().__init__(
@@ -69,6 +68,7 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         )
         self.client = client
         self.feed_id = feed_id
+        self.device_name = device_name
         self._fast_poll_cancel: Callable[[], None] | None = None
         self._token_refresh_lock = asyncio.Lock()
         self._consecutive_update_failures = 0

@@ -12,6 +12,7 @@ from .const import (
     CONF_CHANNEL,
     CONF_COOKIE,
     CONF_DEVICE_NAME,
+    CONF_DEVICES,
     CONF_DEVICE_ID,
     CONF_DEVICE_MODEL,
     CONF_FEED_ID,
@@ -61,14 +62,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: JdSmartConfigEntry) -> b
             user_agent=entry.data.get(CONF_USER_AGENT, DEFAULT_USER_AGENT),
         ),
     )
-    coordinator = JdSmartCoordinator(hass, entry, client, entry.data[CONF_FEED_ID])
-    await coordinator.async_config_entry_first_refresh()
+    coordinators: dict[str, JdSmartCoordinator] = {}
+    for device in _entry_devices(entry.data):
+        feed_id = device[CONF_FEED_ID]
+        coordinator = JdSmartCoordinator(
+            hass,
+            entry,
+            client,
+            feed_id,
+            device.get(CONF_DEVICE_NAME),
+        )
+        await coordinator.async_config_entry_first_refresh()
+        coordinators[feed_id] = coordinator
 
     entry.runtime_data = JdSmartRuntimeData(
         client=client,
-        coordinator=coordinator,
-        feed_id=entry.data[CONF_FEED_ID],
-        device_name=entry.data.get(CONF_DEVICE_NAME),
+        coordinators=coordinators,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -77,7 +86,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: JdSmartConfigEntry) -> b
 async def async_unload_entry(hass: HomeAssistant, entry: JdSmartConfigEntry) -> bool:
     """Unload a config entry."""
     if runtime_data := getattr(entry, "runtime_data", None):
-        runtime_data.coordinator.async_shutdown()
+        for coordinator in runtime_data.coordinators.values():
+            coordinator.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
@@ -86,3 +96,15 @@ async def async_reload_entry(hass: HomeAssistant, entry: JdSmartConfigEntry) -> 
     if not await async_unload_entry(hass, entry):
         return False
     return await async_setup_entry(hass, entry)
+
+
+def _entry_devices(data: dict) -> list[dict[str, str]]:
+    """Return configured devices, supporting old single-device entries."""
+    if devices := data.get(CONF_DEVICES):
+        return devices
+    return [
+        {
+            CONF_FEED_ID: data[CONF_FEED_ID],
+            CONF_DEVICE_NAME: data.get(CONF_DEVICE_NAME, ""),
+        }
+    ]
