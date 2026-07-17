@@ -4,7 +4,7 @@
             "already_configured": "设备已经配置",
             "auth_refreshed": "京东小家鉴权信息刷新成功。",
             "auth_updated": "京东小家鉴权信息更新成功。",
-            "no_devices": "没有发现新的空调设备。已配置的设备会被隐藏。"
+            "no_devices": "没有发现新的设备。已配置的设备会被隐藏。"
         },
         "error": {
             "cannot_connect": "连接失败",
@@ -68,7 +68,7 @@
                 "data": {
                     "selected_devices": "设备"
                 },
-                "description": "选择一个或多个要添加的空调设备。已配置的设备会被隐藏。"
+                "description": "选择一个或多个要添加的设备。已配置的设备会被隐藏。"
             }
         }
     },

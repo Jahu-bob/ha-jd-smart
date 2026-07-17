@@ -4,7 +4,7 @@
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
       "auth_refreshed": "JD Smart authentication was refreshed successfully.",
       "auth_updated": "JD Smart authentication was updated successfully.",
-      "no_devices": "No new air conditioners were found. Already configured devices are hidden."
+      "no_devices": "No new devices were found. Already configured devices are hidden."
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -52,7 +52,7 @@
         "data": {
           "selected_devices": "Devices"
         },
-        "description": "Select one or more air conditioners to add. Already configured devices are hidden."
+        "description": "Select one or more devices to add. Already configured devices are hidden."
       },
       "reauth_confirm": {
         "data": {

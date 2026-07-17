@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import JdSmartConfigEntry
 from .entity import JdSmartEntity
+from .control import is_air_conditioner_device
 
 MODE_TO_HVAC = {
     "0": HVACMode.COOL,
@@ -62,10 +63,11 @@ async def async_setup_entry(
     entry: JdSmartConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up JD Smart climate."""
+    """Set up JD Smart climate (air conditioners only)."""
     async_add_entities(
         JdSmartClimate(coordinator)
         for coordinator in entry.runtime_data.coordinators.values()
+        if is_air_conditioner_device(coordinator)
     )
 
 

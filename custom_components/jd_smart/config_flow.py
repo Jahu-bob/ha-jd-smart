@@ -25,17 +25,21 @@ from .api import (
 )
 from .const import (
     CONF_APP_VERSION,
+    CONF_CATEGORY,
     CONF_CHANNEL,
     CONF_COOKIE,
+    CONF_CARD_META,
     CONF_DEVICE_NAME,
     CONF_DEVICES,
     CONF_DEVICE_ID,
     CONF_DEVICE_MODEL,
     CONF_FEED_ID,
+    CONF_HOUSE_ID,
     CONF_PLATFORM,
     CONF_PLATFORM_VERSION,
     CONF_PIN,
     CONF_SGM_CONTEXT,
+    CONF_STREAMS,
     CONF_TGT,
     CONF_USER_AGENT,
     DEFAULT_APP_VERSION,
@@ -364,11 +368,7 @@ class JdSmartAcConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_FEED_ID: first_device.feed_id,
                     CONF_DEVICE_NAME: first_device.name,
                     CONF_DEVICES: [
-                        {
-                            CONF_FEED_ID: device.feed_id,
-                            CONF_DEVICE_NAME: device.name,
-                        }
-                        for device in selected_devices
+                        _device_cache_entry(device) for device in selected_devices
                     ],
                 }
                 title = (
@@ -462,6 +462,23 @@ def _device_label(device: JdSmartDevice) -> str:
     return f"{device.name}{suffix} ({device.feed_id})"
 
 
+def _device_cache_entry(device: JdSmartDevice) -> dict:
+    """Build the per-device dict stored in CONF_DEVICES.
+
+    Captures category / house_id / card_meta / streams best-effort so the
+    coordinator can route AC-vs-generic, call getDeviceDetails, and fall back to
+    card_meta. Older entries lacking these keep working (coordinator uses .get()).
+    """
+    return {
+        CONF_FEED_ID: device.feed_id,
+        CONF_DEVICE_NAME: device.name,
+        CONF_CATEGORY: device.category_name,
+        CONF_HOUSE_ID: device.house_id,
+        CONF_CARD_META: device.card_meta,
+        CONF_STREAMS: device.streams,
+    }
+
+
 def _entry_devices(data: dict[str, Any]) -> list[dict[str, str]]:
     """Return configured devices from new or legacy entry data."""
     if devices := data.get(CONF_DEVICES):
@@ -487,10 +504,7 @@ def _merge_entry_devices(
         for device in _entry_devices(entry_data)
     }
     for device in selected_devices:
-        devices[device.feed_id] = {
-            CONF_FEED_ID: device.feed_id,
-            CONF_DEVICE_NAME: device.name,
-        }
+        devices[device.feed_id] = _device_cache_entry(device)
 
     merged_devices = list(devices.values())
     first_device = merged_devices[0]

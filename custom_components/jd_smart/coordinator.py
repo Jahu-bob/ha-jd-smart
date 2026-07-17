@@ -32,7 +32,9 @@ from .const import (
     FAST_POLL_INTERVAL,
     LOGGER,
     UPDATE_AUTH_FAILURE_THRESHOLD,
+    is_air_conditioner,
 )
+from .model import control_kind, model_from_card_meta, parse_stream_model
 
 type JdSmartConfigEntry = ConfigEntry[JdSmartRuntimeData]
 
@@ -57,6 +59,9 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         client: JdSmartClient,
         feed_id: str,
         device_name: str | None,
+        device_category: str | None = None,
+        house_id: str | None = None,
+        card_meta: dict | None = None,
     ) -> None:
         """Initialize coordinator."""
         super().__init__(
@@ -69,6 +74,12 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         self.client = client
         self.feed_id = feed_id
         self.device_name = device_name
+        self.device_category = device_category
+        self.house_id = house_id
+        self.card_meta = card_meta
+        # Stream model for this device (getDeviceDetails or card_meta fallback).
+        # Empty until async_fetch_model() runs; entities guard on it.
+        self.stream_model: dict[str, dict] = {}
         self._fast_poll_cancel: Callable[[], None] | None = None
         self._token_refresh_lock = asyncio.Lock()
         self._consecutive_update_failures = 0
@@ -103,6 +114,89 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         except JdSmartError as err:
             await self._async_handle_update_failure(err)
         raise UpdateFailed("Unable to update JD Smart")
+
+    async def async_fetch_model(self) -> None:
+        """Fetch this device's stream model once at setup (getDeviceDetails via gw).
+
+        The model is static metadata (which streams are controllable, options,
+        ranges), so it is fetched once and reused. getDeviceDetails needs house_id;
+        when house_id is missing or the call fails, fall back to the card_meta
+        captured at discovery (yields switch/select only, no numeric ranges).
+        Never raises -- a missing model just means only read-only sensors plus the
+        control service are exposed for this device.
+
+        Air conditioners skip this entirely: they are driven by the climate platform
+        and do not need the generic stream model.
+        """
+        streams = self.data.streams if self.data else {}
+        if is_air_conditioner(self.device_category, streams):
+            LOGGER.debug(
+                "JD Smart device %s (feed_id=%s) is an air conditioner; skipping "
+                "stream-model fetch (uses climate platform).",
+                self.device_name or self.feed_id,
+                self.feed_id,
+            )
+            return
+        model: dict[str, dict] = {}
+        source = "card_meta"
+        if self.house_id:
+            try:
+                raw = await self.client.async_get_device_details(
+                    self.feed_id, self.house_id
+                )
+                model = parse_stream_model(raw)
+                if model:
+                    source = "getDeviceDetails(gw)"
+                else:
+                    LOGGER.warning(
+                        "JD Smart getDeviceDetails returned no model for %s "
+                        "(feed_id=%s, house_id=%s); falling back to card_meta. "
+                        "Use the jd_smart.get_device_model service to inspect the "
+                        "raw response.",
+                        self.device_name or self.feed_id,
+                        self.feed_id,
+                        self.house_id,
+                    )
+            except Exception as err:  # noqa: BLE001 -- best-effort, never break setup
+                LOGGER.warning(
+                    "JD Smart getDeviceDetails failed for %s (feed_id=%s): %s; "
+                    "falling back to card_meta.",
+                    self.device_name or self.feed_id,
+                    self.feed_id,
+                    err,
+                )
+        else:
+            LOGGER.info(
+                "JD Smart device %s (feed_id=%s) has no house_id; skipping "
+                "getDeviceDetails and using card_meta fallback. Re-discover devices "
+                "to capture house_id, or use get_device_model to probe.",
+                self.device_name or self.feed_id,
+                self.feed_id,
+            )
+        if not model and self.card_meta:
+            model = model_from_card_meta(self.card_meta)
+        self.stream_model = model
+        if model:
+            kinds = [control_kind(m) for m in model.values()]
+            LOGGER.info(
+                "JD Smart device %s (feed_id=%s) model source=%s: switch=%d/"
+                "select=%d/number=%d (streams=%d)",
+                self.device_name or self.feed_id,
+                self.feed_id,
+                source,
+                kinds.count("switch"),
+                kinds.count("select"),
+                kinds.count("number"),
+                len(model),
+            )
+        else:
+            LOGGER.warning(
+                "JD Smart device %s (feed_id=%s) has no model (getDeviceDetails and "
+                "card_meta both empty); only read-only sensors + control service "
+                "will be available.",
+                self.device_name or self.feed_id,
+                self.feed_id,
+            )
 
     async def async_control_streams(self, commands: dict[str, object]) -> None:
         """Control streams and refresh state."""

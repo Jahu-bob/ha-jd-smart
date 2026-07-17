@@ -1,4 +1,10 @@
-"""Sensor platform for JD Smart."""
+"""Sensor platform for JD Smart.
+
+Air conditioners use the static description-based sensors (current temperature,
+humidity, TVOC, runtime counters, diagnostics). Any other device type (water
+heater, purifier, ...) gets a read-only sensor for each remaining stream, named
+and unitised from its stream model.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +17,18 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import PERCENTAGE, UnitOfTemperature, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .control import (
+    control_map,
+    control_name,
+    is_air_conditioner_device,
+    is_binary_stream,
+    model_entry,
+    to_number,
+)
 from .coordinator import JdSmartConfigEntry
 from .entity import JdSmartEntity
 
@@ -93,15 +107,49 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up JD Smart sensors."""
-    async_add_entities(
-        JdSmartSensor(coordinator, description)
-        for coordinator in entry.runtime_data.coordinators.values()
-        for description in SENSORS
-    )
+    coordinators = entry.runtime_data.coordinators
+
+    # AC devices: static description-based sensors.
+    ac_entities: list[SensorEntity] = []
+    for coordinator in coordinators.values():
+        if is_air_conditioner_device(coordinator):
+            ac_entities.extend(
+                JdSmartSensor(coordinator, description) for description in SENSORS
+            )
+    if ac_entities:
+        async_add_entities(ac_entities)
+
+    # Non-AC devices: one sensor per read-only, non-binary stream.
+    known: set[tuple[str, str]] = set()
+
+    @callback
+    def _add() -> None:
+        new: list[SensorEntity] = []
+        for coordinator in coordinators.values():
+            if is_air_conditioner_device(coordinator):
+                continue
+            streams = coordinator.data.streams if coordinator.data else {}
+            cmap = control_map(coordinator)
+            for stream_id in streams:
+                if stream_id in cmap:
+                    continue  # already a control entity (switch/select/number)
+                if is_binary_stream(stream_id, model_entry(coordinator, stream_id)):
+                    continue  # on/off read-only -> binary_sensor
+                key = (coordinator.feed_id, stream_id)
+                if key in known:
+                    continue
+                known.add(key)
+                new.append(JdStreamSensor(coordinator, stream_id))
+        if new:
+            async_add_entities(new)
+
+    _add()
+    for coordinator in coordinators.values():
+        entry.async_on_unload(coordinator.async_add_listener(_add))
 
 
 class JdSmartSensor(JdSmartEntity, SensorEntity):
-    """JD Smart stream sensor."""
+    """JD Smart stream sensor (AC, description-based)."""
 
     entity_description: JdSmartSensorDescription
 
@@ -127,3 +175,34 @@ class JdSmartSensor(JdSmartEntity, SensorEntity):
             except (TypeError, ValueError):
                 return None
         return value
+
+
+class JdStreamSensor(JdSmartEntity, SensorEntity):
+    """JD Smart generic read-only stream sensor (non-AC, stream-model-driven)."""
+
+    def __init__(self, coordinator, stream_id: str) -> None:
+        """Initialize sensor."""
+        super().__init__(coordinator, stream_id)
+        self._stream = stream_id
+        model = model_entry(coordinator, stream_id)
+        self._options = model.get("options") or None  # {code: label} for enum streams
+        self._attr_name = control_name(coordinator, stream_id, model)
+        # Only set a unit when the model provides one; no device_class/state_class to
+        # avoid HA validation constraints on unknown telemetry streams.
+        if not self._options and model.get("unit"):
+            self._attr_native_unit_of_measurement = model["unit"]
+
+    @property
+    def native_value(self) -> str | float | None:
+        """Return sensor value (enum label for option streams, else number/raw)."""
+        value = self.streams.get(self._stream)
+        if value is None or value == "":
+            return None
+        if self._options:
+            return self._options.get(str(value), value)
+        return to_number(value)
+
+    @property
+    def available(self) -> bool:
+        """Return True when the stream is present in the latest snapshot."""
+        return super().available and self._stream in self.streams

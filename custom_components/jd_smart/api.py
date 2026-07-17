@@ -27,21 +27,47 @@ try:
 except ImportError:
     TripleDESAlgorithm = algorithms.TripleDES
 
-from .const import (
-    APP_KEY,
-    CONTROL_PATH,
-    DEFAULT_APP_VERSION,
-    DEFAULT_CHANNEL,
-    DEFAULT_DEVICE_MODEL,
-    DEFAULT_PLATFORM,
-    DEFAULT_PLATFORM_VERSION,
-    DEFAULT_USER_AGENT,
-    DEVICE_LIST_PATH,
-    HMAC_KEY,
-    JD_SMART_BASE_URL,
-    LOGGER,
-    SNAPSHOT_PATH,
-)
+try:
+    from .model import build_card_meta, coerce_value
+except ImportError:  # standalone import
+    from model import build_card_meta, coerce_value
+
+try:
+    from .const import (
+        APP_KEY,
+        CONTROL_PATH,
+        DEFAULT_APP_VERSION,
+        DEFAULT_CHANNEL,
+        DEFAULT_DEVICE_MODEL,
+        DEFAULT_PLATFORM,
+        DEFAULT_PLATFORM_VERSION,
+        DEFAULT_USER_AGENT,
+        DEVICE_LIST_PATH,
+        GW_API_BASE,
+        GW_DETAILS_PATH,
+        HMAC_KEY,
+        JD_SMART_BASE_URL,
+        LOGGER,
+        SNAPSHOT_PATH,
+    )
+except ImportError:  # running `python api.py` standalone for self-test
+    from const import (
+        APP_KEY,
+        CONTROL_PATH,
+        DEFAULT_APP_VERSION,
+        DEFAULT_CHANNEL,
+        DEFAULT_DEVICE_MODEL,
+        DEFAULT_PLATFORM,
+        DEFAULT_PLATFORM_VERSION,
+        DEFAULT_USER_AGENT,
+        DEVICE_LIST_PATH,
+        GW_API_BASE,
+        GW_DETAILS_PATH,
+        HMAC_KEY,
+        JD_SMART_BASE_URL,
+        LOGGER,
+        SNAPSHOT_PATH,
+    )
 
 WJLOGIN_REFRESH_URL = "https://wlogin.m.jd.com/applogin_v2"
 WJLOGIN_APP_ID = 1421
@@ -139,6 +165,13 @@ class JdSmartDevice:
     category_name: str | None = None
     room_name: str | None = None
     version: str | None = None
+    # Best-effort fields captured from the device-list response. house_id feeds
+    # getDeviceDetails; card_meta is the degraded model fallback; category_name
+    # drives AC-vs-generic routing; streams lists reported stream_ids. All may be
+    # None for older entries or response shapes that omit them.
+    house_id: str | None = None
+    card_meta: dict | None = None
+    streams: list | None = None
 
 
 @dataclass(slots=True)
@@ -878,12 +911,18 @@ class JdSmartClient:
         return JdSmartSnapshot.from_result(payload["result"])
 
     def _control_body(self, feed_id: str, commands: dict[str, Any]) -> str:
-        """Build control business body."""
+        """Build control business body.
+
+        current_value is coerced to a bare number for numeric values (the App's wire
+        format, verified across device types incl. ACs by L1yp/jd-smart) and left as
+        a string only for non-numeric values. The body is signed byte-exact, so the
+        signature is recomputed over whatever bytes this produces.
+        """
         inner = {
             "version": "2.0",
             "feed_id": feed_id,
             "command": [
-                {"stream_id": stream_id, "current_value": str(value)}
+                {"stream_id": stream_id, "current_value": coerce_value(value)}
                 for stream_id, value in commands.items()
             ],
         }
@@ -926,6 +965,40 @@ class JdSmartClient:
         )
         raise JdSmartControlError(f"Unexpected control result: {result}")
 
+    async def async_get_device_details(
+        self,
+        feed_id: str,
+        house_id: str | None,
+    ) -> dict[str, Any]:
+        """Fetch a device's full stream model via the gw gateway.
+
+        Uses the same HmacSHA1 signing as snapshot/control (identical seg1/key); only
+        the base (gw.smart.jd.com), path and body differ. Returns the raw payload --
+        parse it with ``parse_stream_model``. ``house_id`` is required by the endpoint;
+        when unknown, pass ``None`` (the server typically returns an empty model, which
+        the caller treats as "fall back to card_meta").
+        """
+        inner = {
+            "device_id": str(feed_id),
+            "is_weilian": 1,
+            "skill_id": "",
+            "json_data": {
+                "version": "2.0",
+                "feed_id": int(feed_id),
+                "houseId": str(house_id) if house_id is not None else "",
+            },
+        }
+        raw_body = _json_dumps(inner)
+        url = f"{GW_API_BASE}{GW_DETAILS_PATH}?{urlencode(self._public_query())}"
+        LOGGER.debug(
+            "JD Smart getDeviceDetails: feed_id=%s, house_id=%s",
+            feed_id,
+            house_id,
+        )
+        return await self._request_json(
+            url, raw_body, headers=self._headers(raw_body)
+        )
+
 
 def _truncate(value: str, limit: int = 1000) -> str:
     """Truncate a log value."""
@@ -967,6 +1040,20 @@ def _parse_devices(data: Any) -> list[JdSmartDevice]:
                     or value.get("deviceName")
                     or feed_id_text
                 )
+                # card_desc/card_control may sit on the card dict directly or under
+                # a nested smartInfo; build_card_meta handles either. house_id may be
+                # on the card or absent (per-house responses carry it higher up).
+                smart_info = value.get("smartInfo")
+                if not isinstance(smart_info, dict):
+                    smart_info = value
+                card_meta = None
+                if isinstance(smart_info, dict) and (
+                    smart_info.get("card_desc") or smart_info.get("card_control")
+                ):
+                    card_meta = build_card_meta(smart_info)
+                snapshot = smart_info.get("snapshot") if isinstance(smart_info, dict) else None
+                if not isinstance(snapshot, dict):
+                    snapshot = value.get("snapshot") if isinstance(value.get("snapshot"), dict) else {}
                 devices.append(
                     JdSmartDevice(
                         feed_id=feed_id_text,
@@ -981,6 +1068,11 @@ def _parse_devices(data: Any) -> list[JdSmartDevice]:
                             value.get("room_name", value.get("roomName"))
                         ),
                         version=_optional_str(value.get("version")),
+                        house_id=_optional_str(
+                            value.get("house_id", value.get("houseId"))
+                        ),
+                        card_meta=card_meta,
+                        streams=list(snapshot.keys()) if snapshot else None,
                     )
                 )
 
@@ -994,3 +1086,4 @@ def _parse_devices(data: Any) -> list[JdSmartDevice]:
 def _optional_str(value: Any) -> str | None:
     """Return value as a string if present."""
     return None if value is None else str(value)
+

@@ -1,0 +1,56 @@
+get_device_snapshot:
+  name: Query device snapshot
+  description: Calls JD Smart getDeviceSnapshot_v1 and returns the device's status snapshot (streams + status). Useful for inspecting what streams a device reports.
+  fields:
+    feed_id:
+      name: feed_id
+      description: The device feed_id (already configured in the integration).
+      required: true
+      example: "100000000000000000"
+      selector:
+        text:
+
+control_device:
+  name: Control device
+  description: Sends a controlDevice_v1 command to any JD Smart device. Two input forms -- stream_id + value (single stream), or a command array (multiple streams). Used to control non-AC devices (water heater, purifier) and to debug.
+  fields:
+    feed_id:
+      name: feed_id
+      description: Target device feed_id (already configured in the integration).
+      required: true
+      example: "576841753861489755"
+      selector:
+        text:
+    stream_id:
+      name: stream_id
+      description: The stream ID to control (single-stream form, paired with value). E.g. Power / Mode / Wind / Vertical.
+      required: false
+      example: Vertical
+      selector:
+        text:
+    value:
+      name: value
+      description: The value to write (single-stream form). Switch 0/1; multi-way enum uses the option code (e.g. Mode eco=4); numeric streams use a number.
+      required: false
+      example: 1
+      selector:
+        text:
+    command:
+      name: command (multi)
+      description: 'Raw command array to write multiple streams at once, e.g. [{"stream_id": "Power", "current_value": 1}, {"stream_id": "Wind", "current_value": 10}].'
+      required: false
+      example: '[{"stream_id": "Power", "current_value": 1}]'
+      selector:
+        object:
+
+get_device_model:
+  name: Query device model (diagnostic)
+  description: Fetches the device's getDeviceDetails stream model and returns the raw response, parsed model, and controllable-stream classification (control_map). Use this to see why a device only got a Power switch -- if control_map lacks Mode/Wind/etc., getDeviceDetails returned no model and the integration fell back to card_meta.
+  fields:
+    feed_id:
+      name: feed_id
+      description: Target device feed_id (already configured in the integration).
+      required: true
+      example: "576841753861489755"
+      selector:
+        text:
