@@ -1,5 +1,5 @@
-# JD Smart AC
+# JD Smart
 
-A Home Assistant custom integration for air conditioners controlled through the JD Xiaojia / JD Smart app.
+A Home Assistant custom integration for devices controlled through the JD Xiaojia / JD Smart app - air conditioners (exposed as a climate entity) plus any other device type (gas water heaters, water purifiers, ...) via a generic stream-model-driven entity layer.
 
-This integration currently requires manually captured JD Xiaojia request fields, including `feed_id`, `cookie`, `tgt`, and request metadata. See the README for setup and packet capture instructions.
+This integration requires manually captured JD Xiaojia request fields, including `cookie`, `tgt`, and request metadata. See the README for setup and packet capture instructions.
