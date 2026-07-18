@@ -1,21 +1,23 @@
 # JD Smart for Home Assistant
 
-Unofficial Home Assistant custom integration for air conditioners controlled through the JD Smart / JD Xiaojia app.
+Unofficial Home Assistant custom integration for devices controlled through the JD Smart / JD Xiaojia app — air conditioners, gas water heaters, water purifiers, and other JD Smart devices.
 
-This repository packages the JD Smart air-conditioner control API as a Home Assistant custom integration. It is not affiliated with JD.com, JD Smart, JD Xiaojia, or Home Assistant.
+This repository packages the JD Smart control API as a Home Assistant custom integration. It is not affiliated with JD.com, JD Smart, JD Xiaojia, or Home Assistant.
 
 [简体中文 README](README_zh-Hans.md)
 
 ## Purpose
 
-This repository is for users who own an air conditioner controlled through the JD Smart / JD Xiaojia app and can extract session values from a local app traffic capture. This does not mean JD-branded air conditioners only; it means air conditioners connected to JD Smart / JD Xiaojia, such as KFR 35GW style wall-mounted units.
+This repository is for users who have devices controlled through the JD Smart / JD Xiaojia app and can extract session values from a local app traffic capture. Air conditioners are exposed via a dedicated climate entity; any other device type (gas water heater, water purifier, fan, outlet, ...) is supported automatically through a generic stream-model-driven entity layer — no per-device hardcoding.
 
 ## Features
 
-- Climate entity for power, HVAC mode, target temperature, fan speed, vertical swing, and sleep preset.
-- Switch entities for backlight, display, and powerful mode.
-- Select entity for horizontal swing direction.
+- Climate entity for air conditioners (power, HVAC mode, target temperature, fan speed, vertical swing, sleep preset).
+- Generic entity layer for any other JD Smart device: switches, selects, numbers, sensors and binary sensors are generated automatically from each device's stream model - so water heaters, water purifiers and the like work without per-device code.
+- Switch entities for AC backlight, display, and powerful mode.
+- Select entity for AC horizontal swing direction.
 - Sensor entities for current temperature, humidity, and diagnostic values.
+- Services for diagnostics and manual control of any device (`get_device_snapshot`, `control_device`, `get_device_model`).
 - Config flow UI.
 - `tgt` token refresh support.
 
@@ -63,7 +65,7 @@ Settings -> Devices & services -> Add integration -> JD Smart
 
 You need values from a working JD Smart / JD Xiaojia mobile app session. You can capture HTTPS traffic with a tool such as Stream, Proxyman, Charles, HTTP Toolkit, or mitmproxy.
 
-Open the air conditioner page and capture a successful request to:
+Open a device page (for example the air conditioner) in the JD Smart / JD Xiaojia app and capture a successful request to:
 
 ```text
 https://api.smart.jd.com/c/service/integration/v1/getDeviceSnapshot_v1
@@ -71,7 +73,7 @@ https://api.smart.jd.com/c/service/integration/v1/getDeviceSnapshot_v1
 
 Use values from the same request whenever possible. You do not need to enter
 `feed_id` manually. After authentication, the integration fetches the available
-devices and lets you select one or more air conditioners. Devices that are
+devices and lets you select one or more devices. Devices that are
 already configured are hidden from the selection list.
 
 `cookie`
@@ -121,13 +123,15 @@ The request `User-Agent` header.
 
 ## Entities
 
-The climate entity supports power, HVAC mode, target temperature, current temperature, current humidity, fan speed, vertical swing, and sleep preset. The target temperature range is 18-32 C with 1 C steps.
+Air conditioners are exposed as a climate entity (power, HVAC mode, target temperature, current temperature, current humidity, fan speed, vertical swing, sleep preset; target temperature 18-32 C with 1 C steps), plus AC-specific switches (backlight, display, powerful), a select (horizontal swing) and sensors (current temperature, humidity, TVOC, runtime counters, diagnostics).
 
-Switch entities include backlight, display, and powerful mode.
+Any other device type gets a set of generic entities derived from its stream model: an on/off stream becomes a switch, a multi-way enum becomes a select, a numeric range becomes a number, and read-only streams become sensors or binary sensors. Use the `jd_smart.get_device_model` service to inspect which streams a device exposes and how they are classified.
 
-The select entity controls horizontal swing direction.
+## Services
 
-Sensor entities include current temperature, current humidity, TVOC, runtime counters, speaker raw value, MDP mode, protection state, and other diagnostic values.
+- `jd_smart.get_device_snapshot` - return a device's current snapshot (streams + status).
+- `jd_smart.control_device` - send a control command to any device, by `stream_id` + `value` or a `command` array. Useful for non-AC devices and debugging.
+- `jd_smart.get_device_model` - (diagnostic) return a device's stream model and controllable-stream classification. Use this to see which entities a device will get, and to troubleshoot a device that only shows a Power switch (usually meaning the stream model could not be fetched - check `house_id` / `tgt`).
 
 ## Disclaimer
 
