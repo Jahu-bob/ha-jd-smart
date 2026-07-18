@@ -970,13 +970,14 @@ class JdSmartClient:
         feed_id: str,
         house_id: str | None,
     ) -> dict[str, Any]:
-        """Fetch a device's full stream model via the gw gateway.
+        """Fetch a device's full stream model via getDeviceDetails.
 
-        Uses the same HmacSHA1 signing as snapshot/control (identical seg1/key); only
-        the base (gw.smart.jd.com), path and body differ. Returns the raw payload --
-        parse it with ``parse_stream_model``. ``house_id`` is required by the endpoint;
-        when unknown, pass ``None`` (the server typically returns an empty model, which
-        the caller treats as "fall back to card_meta").
+        Goes through ``api.smart.jd.com`` + Wangyin encryption -- the SAME auth path
+        used by device-list/snapshot/control (proven for accounts whose tgt is an
+        api.smart.jd.com token). The gw.smart.jd.com + plain path that L1yp uses
+        returns ``-4`` ("login expired") for such accounts, so it is avoided here.
+        Returns the raw payload; parse with ``parse_stream_model``. ``house_id`` is
+        required by the endpoint; when unknown pass ``None`` (empty houseId).
         """
         inner = {
             "device_id": str(feed_id),
@@ -989,15 +990,12 @@ class JdSmartClient:
             },
         }
         raw_body = _json_dumps(inner)
-        url = f"{GW_API_BASE}{GW_DETAILS_PATH}?{urlencode(self._public_query())}"
         LOGGER.debug(
             "JD Smart getDeviceDetails: feed_id=%s, house_id=%s",
             feed_id,
             house_id,
         )
-        return await self._request_json(
-            url, raw_body, headers=self._headers(raw_body)
-        )
+        return await self._request_wangyin_json(GW_DETAILS_PATH, raw_body)
 
 
 def _truncate(value: str, limit: int = 1000) -> str:

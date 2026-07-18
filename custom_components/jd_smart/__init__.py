@@ -226,13 +226,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError(
                 f"No JD Smart device with feed_id={call.data[ATTR_FEED_ID]}"
             )
+        raw = None
+        model: dict[str, dict] = {}
+        error: str | None = None
         try:
             raw = await coordinator.client.async_get_device_details(
                 coordinator.feed_id, coordinator.house_id
             )
-        except JdSmartError as err:
-            raise HomeAssistantError(f"getDeviceDetails failed: {err}") from err
-        model = parse_stream_model(raw)
+            model = parse_stream_model(raw)
+        except Exception as err:  # noqa: BLE001 -- diagnostic: return error, don't 500
+            error = f"{type(err).__name__}: {err}"
         control_map = {
             sid: kind for sid, m in model.items() if (kind := control_kind(m))
         }
@@ -245,6 +248,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             "control_map": control_map,
             "model": model,
             "raw": raw,
+            "error": error,
         }
 
     hass.services.async_register(
