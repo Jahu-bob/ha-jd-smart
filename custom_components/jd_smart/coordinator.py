@@ -116,14 +116,15 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         raise UpdateFailed("Unable to update JD Smart")
 
     async def async_fetch_model(self) -> None:
-        """Fetch this device's stream model once at setup (getDeviceDetails via gw).
+        """Fetch this device's stream model once at setup (getDeviceDetails).
 
         The model is static metadata (which streams are controllable, options,
-        ranges), so it is fetched once and reused. getDeviceDetails needs house_id;
-        when house_id is missing or the call fails, fall back to the card_meta
-        captured at discovery (yields switch/select only, no numeric ranges).
-        Never raises -- a missing model just means only read-only sensors plus the
-        control service are exposed for this device.
+        ranges), so it is fetched once and reused. getDeviceDetails is called via
+        api.smart.jd.com + Wangyin (works even with an empty houseId for this
+        account); on failure or empty result, fall back to the card_meta captured
+        at discovery (yields switch/select only, no numeric ranges). Never raises
+        -- a missing model just means only read-only sensors plus the control
+        service are exposed for this device.
 
         Air conditioners skip this entirely: they are driven by the climate platform
         and do not need the generic stream model.
@@ -139,39 +140,32 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
             return
         model: dict[str, dict] = {}
         source = "card_meta"
-        if self.house_id:
-            try:
-                raw = await self.client.async_get_device_details(
-                    self.feed_id, self.house_id
-                )
-                model = parse_stream_model(raw)
-                if model:
-                    source = "getDeviceDetails(gw)"
-                else:
-                    LOGGER.warning(
-                        "JD Smart getDeviceDetails returned no model for %s "
-                        "(feed_id=%s, house_id=%s); falling back to card_meta. "
-                        "Use the jd_smart.get_device_model service to inspect the "
-                        "raw response.",
-                        self.device_name or self.feed_id,
-                        self.feed_id,
-                        self.house_id,
-                    )
-            except Exception as err:  # noqa: BLE001 -- best-effort, never break setup
+        # getDeviceDetails via api.smart.jd.com + Wangyin works even with an empty
+        # houseId for this account, so always attempt it (do not gate on house_id).
+        try:
+            raw = await self.client.async_get_device_details(
+                self.feed_id, self.house_id
+            )
+            model = parse_stream_model(raw)
+            if model:
+                source = "getDeviceDetails"
+            else:
                 LOGGER.warning(
-                    "JD Smart getDeviceDetails failed for %s (feed_id=%s): %s; "
-                    "falling back to card_meta.",
+                    "JD Smart getDeviceDetails returned no model for %s "
+                    "(feed_id=%s, house_id=%s); falling back to card_meta. "
+                    "Use the jd_smart.get_device_model service to inspect the "
+                    "raw response.",
                     self.device_name or self.feed_id,
                     self.feed_id,
-                    err,
+                    self.house_id,
                 )
-        else:
-            LOGGER.info(
-                "JD Smart device %s (feed_id=%s) has no house_id; skipping "
-                "getDeviceDetails and using card_meta fallback. Re-discover devices "
-                "to capture house_id, or use get_device_model to probe.",
+        except Exception as err:  # noqa: BLE001 -- best-effort, never break setup
+            LOGGER.warning(
+                "JD Smart getDeviceDetails failed for %s (feed_id=%s): %s; "
+                "falling back to card_meta.",
                 self.device_name or self.feed_id,
                 self.feed_id,
+                err,
             )
         if not model and self.card_meta:
             model = model_from_card_meta(self.card_meta)
