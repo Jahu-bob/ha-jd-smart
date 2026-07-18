@@ -185,7 +185,7 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
             )
         else:
             LOGGER.warning(
-                "JD Smart device %s (feed_id=%s) has no model (getDeviceDetails and "
+                "JD Smart [0.2.1] device %s (feed_id=%s) has no model (getDeviceDetails and "
                 "card_meta both empty); only read-only sensors + control service "
                 "will be available.",
                 self.device_name or self.feed_id,
